@@ -19,7 +19,7 @@ async def main():
 
     document = await client.upload_document_to_assistant(
         assistant.assistant_id,
-        "cognito-dg-pages.pdf"
+        "server/data/documents/cognito-dg-pages.pdf"
     )
 
     print("Waiting for document to be indexed...")
