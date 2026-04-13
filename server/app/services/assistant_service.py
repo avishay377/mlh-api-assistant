@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+from typing import Optional
 
 from app.integrations.backboard.client import get_backboard_client
 
@@ -51,20 +52,74 @@ async def wait_for_document_indexing(document_id: str, poll_interval: int = 2):
         await asyncio.sleep(poll_interval)
 
 
-async def ask_assistant(assistant_id: str, content: str) -> str:
+async def create_thread_for_assistant(assistant_id: str):
+    client = get_backboard_client()
+    return await client.create_thread(assistant_id)
+
+
+async def send_message_to_thread(
+    thread_id: str,
+    content: str,
+    *,
+    web_search: Optional[str] = None,
+    memory: Optional[str] = None,
+    stream: bool = True,
+) -> str:
+    """
+    Sends a message to an existing Backboard thread.
+
+    Challenge 4 support:
+    - web_search="auto"
+    - memory="auto"
+    """
     client = get_backboard_client()
 
-    thread = await client.create_thread(assistant_id)
+    add_message_kwargs = {
+        "thread_id": thread_id,
+        "content": content,
+        "stream": stream,
+    }
 
-    parts = []
-    async for chunk in await client.add_message(
+    if web_search:
+        add_message_kwargs["web_search"] = web_search
+
+    if memory:
+        add_message_kwargs["memory"] = memory
+
+    if stream:
+        parts = []
+        async for chunk in await client.add_message(**add_message_kwargs):
+            if chunk.get("type") == "content_streaming":
+                c = chunk.get("content", "")
+                if c:
+                    parts.append(c)
+        return "".join(parts)
+
+    result = await client.add_message(**add_message_kwargs)
+
+    if isinstance(result, dict):
+        return result.get("content", "")
+
+    return str(result)
+
+
+async def ask_assistant(
+    assistant_id: str,
+    content: str,
+    *,
+    web_search: Optional[str] = None,
+    memory: Optional[str] = None,
+) -> str:
+    """
+    Creates a fresh thread and sends one message.
+    Good for simple one-shot usage.
+    """
+    thread = await create_thread_for_assistant(assistant_id)
+
+    return await send_message_to_thread(
         thread_id=thread.thread_id,
         content=content,
+        web_search=web_search,
+        memory=memory,
         stream=True,
-    ):
-        if chunk.get("type") == "content_streaming":
-            c = chunk.get("content", "")
-            if c:
-                parts.append(c)
-
-    return "".join(parts)
+    )
